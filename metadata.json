@@ -1,0 +1,7 @@
+{
+  "name": "ResearchAnalyzer",
+  "description": "Multi-format research analysis tool using AI to generate structured insights, Q&A, and summaries from documents.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
