@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppView, User, DocumentFile } from '../types';
 
 interface Props {
@@ -46,7 +45,11 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
   const documentData = getAnalysisForFile(selectedFile);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [citations, setCitations] = useState(documentData ? documentData.initialCitations : []);
+  
+  // Reference for the content to export
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -70,6 +73,39 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
               { text: "Martinez, P. (2022). Synthetic Feedback Loops: A Cognitive Study. Oxford University Press.", format: "Chicago" }
           ]);
       }, 1500);
+  };
+
+  const handleExportPDF = () => {
+    if (!contentRef.current || !documentData) return;
+    setIsExporting(true);
+
+    const element = contentRef.current;
+    
+    // Options for html2pdf
+    const opt = {
+      margin: [0.5, 0.5, 0.5, 0.5], // top, left, bottom, right in inches
+      filename: `${documentData.meta.filename.replace(/\.[^/.]+$/, "")}_Summary.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    // Use the window.html2pdf library loaded from CDN
+    // @ts-ignore
+    if (window.html2pdf) {
+        // @ts-ignore
+        window.html2pdf().set(opt).from(element).save().then(() => {
+            setIsExporting(false);
+        }).catch((err: any) => {
+            console.error("PDF Export failed", err);
+            setIsExporting(false);
+            alert("Failed to generate PDF. Please try again.");
+        });
+    } else {
+        alert("PDF generator is initializing. Please try again in a moment.");
+        setIsExporting(false);
+    }
   };
 
   if (!documentData) {
@@ -169,11 +205,12 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
             </div>
           </aside>
 
+          {/* Wrapper for the content that will be exported */}
           <div className="flex-1 min-w-0 space-y-8">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div className="space-y-2 max-w-3xl">
-                  {/* Removed font-serif, using default sans-serif (Manrope) to match Dashboard */}
+                  {/* Content Header (Included in Export via ref) */}
                   <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white leading-tight tracking-tight">{documentData.title}</h2>
                   <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                     <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">schedule</span> Uploaded {documentData.meta.uploaded}</span>
@@ -182,12 +219,19 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start">
+                <div className="flex items-center gap-2 self-start no-print">
                   <button className="group flex items-center justify-center size-10 rounded-full bg-white dark:bg-surface-dash-dark hover:bg-slate-50 dark:hover:bg-slate-800 shadow-soft border border-slate-100 dark:border-slate-700 transition-all" title="Copy Summary">
                     <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px] group-hover:scale-110 transition-transform">content_copy</span>
                   </button>
-                  <button className="group flex items-center justify-center size-10 rounded-full bg-white dark:bg-surface-dash-dark hover:bg-slate-50 dark:hover:bg-slate-800 shadow-soft border border-slate-100 dark:border-slate-700 transition-all" title="Export PDF">
-                    <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px] group-hover:scale-110 transition-transform">ios_share</span>
+                  <button 
+                    onClick={handleExportPDF}
+                    disabled={isExporting}
+                    className="group flex items-center justify-center size-10 rounded-full bg-white dark:bg-surface-dash-dark hover:bg-slate-50 dark:hover:bg-slate-800 shadow-soft border border-slate-100 dark:border-slate-700 transition-all" 
+                    title="Export PDF"
+                  >
+                    <span className={`material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px] group-hover:scale-110 transition-transform ${isExporting ? 'animate-spin' : ''}`}>
+                        {isExporting ? 'sync' : 'ios_share'}
+                    </span>
                   </button>
                   <button 
                     onClick={() => onNavigate(AppView.QNA)}
@@ -200,13 +244,20 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-6">
-              <article id="summary" className="group bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50">
+            {/* Content to be exported to PDF */}
+            <div ref={contentRef} className="grid grid-cols-1 gap-6">
+                {/* For PDF export purposes, we duplicate the header inside the ref but hide it on screen so the PDF gets a title */}
+                <div className="hidden pdf-only mb-6">
+                    <h1 className="text-3xl font-bold mb-2">{documentData.title}</h1>
+                    <p className="text-gray-500 text-sm">Generated by ResearchAnalyzer</p>
+                    <hr className="my-4"/>
+                </div>
+
+              <article id="summary" className="group bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50 break-inside-avoid">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
                     <span className="material-symbols-outlined text-[20px]">psychology</span>
                   </div>
-                  {/* Matched font-bold and text colors to Dashboard */}
                   <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">The Core Thesis</h3>
                 </div>
                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-base lg:text-lg">
@@ -215,7 +266,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
               </article>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <article id="findings" className="bg-white dark:bg-surface-dash-dark p-6 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50">
+                <article id="findings" className="bg-white dark:bg-surface-dash-dark p-6 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50 break-inside-avoid">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-1.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300">
                       <span className="material-symbols-outlined text-[20px]">check_circle</span>
@@ -240,7 +291,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                   </ul>
                 </article>
 
-                <article id="methodology" className="bg-white dark:bg-surface-dash-dark p-6 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50">
+                <article id="methodology" className="bg-white dark:bg-surface-dash-dark p-6 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50 break-inside-avoid">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-1.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300">
                       <span className="material-symbols-outlined text-[20px]">science</span>
@@ -258,7 +309,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                 </article>
               </div>
 
-              <article className="bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50">
+              <article className="bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50 break-inside-avoid">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="p-1.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300">
@@ -266,7 +317,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                     </div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Strategic Implications</h3>
                   </div>
-                  <button className="text-xs font-medium text-brand-indigo hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">View Full Text</button>
+                  <button className="text-xs font-medium text-brand-indigo hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors no-print">View Full Text</button>
                 </div>
                 <div className="prose prose-slate dark:prose-invert max-w-none">
                   <p className="text-slate-600 dark:text-slate-300 leading-loose">
@@ -275,7 +326,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                 </div>
               </article>
 
-              <article id="citations" className="bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50">
+              <article id="citations" className="bg-white dark:bg-surface-dash-dark p-6 lg:p-8 rounded-2xl shadow-soft border border-slate-100 dark:border-slate-700/50 break-inside-avoid">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-3">
                         <div className="p-1.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
@@ -283,7 +334,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                         </div>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Citations</h3>
                     </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="flex gap-2 w-full sm:w-auto no-print">
                          <button 
                             onClick={handleRegenerateCitations}
                             disabled={isRegenerating}
@@ -298,9 +349,12 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                             <span className="material-symbols-outlined text-[14px]">content_copy</span>
                             Copy All
                         </button>
-                        <button className="flex-1 sm:flex-none justify-center text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <button 
+                            onClick={handleExportPDF}
+                            className="flex-1 sm:flex-none justify-center text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                        >
                             <span className="material-symbols-outlined text-[14px]">download</span>
-                            Export
+                            {isExporting ? 'Exporting...' : 'Export'}
                         </button>
                     </div>
                 </div>
@@ -314,7 +368,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                 ) : (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         {citations.map((citation, idx) => (
-                            <div key={idx} className="group relative p-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50 hover:border-brand-indigo/30 transition-all">
+                            <div key={idx} className="group relative p-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50 hover:border-brand-indigo/30 transition-all break-inside-avoid">
                                 <div className="flex flex-col sm:flex-row justify-between items-start gap-2 sm:gap-4">
                                     <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium pl-2 border-l-2 border-brand-indigo/20">
                                         {citation.text}
@@ -325,7 +379,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
                                 </div>
                                 <button 
                                     onClick={() => navigator.clipboard.writeText(citation.text)}
-                                    className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-brand-indigo bg-white dark:bg-slate-800 rounded-md shadow-sm border border-slate-100 dark:border-slate-700 transition-all" 
+                                    className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-brand-indigo bg-white dark:bg-slate-800 rounded-md shadow-sm border border-slate-100 dark:border-slate-700 transition-all no-print" 
                                     title="Copy Citation"
                                 >
                                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
@@ -340,7 +394,7 @@ const SummaryView: React.FC<Props> = ({ onNavigate, toggleTheme, isDark, user, o
         </div>
       </main>
 
-      <footer className="w-full py-6 mt-12 border-t border-slate-200 dark:border-slate-800 bg-surface-dash-light dark:bg-canvas-dash-dark">
+      <footer className="w-full py-6 mt-12 border-t border-slate-200 dark:border-slate-800 bg-surface-dash-light dark:bg-canvas-dash-dark no-print">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-xs text-slate-400 dark:text-slate-500">© 2024 Research Analyzer Inc. v1.0.2</p>
           <div className="flex gap-6">
